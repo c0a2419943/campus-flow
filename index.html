@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b2a3a">
+<title>Campus Flow</title>
+<style>
+:root{--round:ui-rounded,"Hiragino Maru Gothic ProN","Yu Gothic",sans-serif;--sans:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;--gink:#ffd23f;--bg1:#0f4a5c;--bg2:#0a1d33;--acc:#ffd23f}
+body[data-s="warn"]{--bg1:#7a4a12;--bg2:#2b1a0c;--acc:#ffb347}
+body[data-s="bad"]{--bg1:#6b2230;--bg2:#220d18;--acc:#ff8c82}
+*{box-sizing:border-box}
+html{background:#0a1d33}
+body{margin:0;min-height:100dvh;color:#fff;font-family:var(--sans);background:radial-gradient(120% 70% at 85% 0%,var(--bg1),var(--bg2) 70%);transition:background .6s;overflow-x:hidden}
+.leaf{position:fixed;top:-40px;right:-60px;width:300px;opacity:.09;transform:rotate(18deg);pointer-events:none}
+.app{position:relative;max-width:440px;margin:0 auto;min-height:100dvh;padding:calc(16px + env(safe-area-inset-top)) 22px calc(28px + env(safe-area-inset-bottom));display:flex;flex-direction:column}
+.top{display:flex;align-items:center;justify-content:space-between}
+.brand{font:800 18px var(--round)}
+.brand small{display:block;font:500 12px var(--sans);color:#ffffffa8;margin-top:1px}
+.gear{width:48px;height:48px;border-radius:50%;border:0;background:#ffffff1f;color:#fff;font-size:22px;cursor:pointer}
+.ringwrap{position:relative;width:min(78vw,320px);aspect-ratio:1;margin:22px auto 8px}
+.ringwrap svg{width:100%;height:100%;transform:rotate(-90deg)}
+.track{fill:none;stroke:#ffffff22;stroke-width:14}
+.arc{fill:none;stroke:var(--acc);stroke-width:14;stroke-linecap:round;transition:stroke-dashoffset .8s cubic-bezier(.2,.8,.2,1),stroke .6s}
+.center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.center small{font-size:14px;color:#ffffffc0}
+.num{font:800 clamp(72px,24vw,96px)/1 var(--round);color:var(--acc);font-variant-numeric:tabular-nums;transition:color .6s}
+.num em{font:800 26px var(--round);font-style:normal;margin-left:3px;color:#fff}
+.center .clk{margin-top:6px;font-size:13px;color:#ffffffa0}
+.msg{text-align:center;margin:10px 0 4px}
+.msg h1{font:800 24px/1.3 var(--round);margin:0 0 4px}
+.msg p{margin:0;font-size:15px;color:#ffffffd0}
+.note{font-size:12px;color:#ffffff90;text-align:center;margin:6px 0 0;min-height:18px}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:auto;padding-top:18px}
+.tile{background:#ffffff17;border:1px solid #ffffff22;border-radius:20px;padding:12px 8px;text-align:center;backdrop-filter:blur(8px)}
+.tile small{display:block;font-size:12px;color:#ffffffb8}
+.tile b{display:block;font:800 22px var(--round);margin-top:4px;font-variant-numeric:tabular-nums}
+.tile.key{background:#ffffff2e;border-color:var(--acc)}
+.bar{display:flex;height:8px;border-radius:5px;overflow:hidden;gap:3px;margin-top:14px}
+.bar i{display:block;min-width:4px}
+.bar .a{background:var(--acc)}.bar .b{background:#ffffff80}.bar .c{background:#ffffff30}
+.cap{display:flex;justify-content:space-between;font-size:11px;color:#ffffffa0;margin-top:5px}
+dialog{width:min(100%,440px);max-width:100%;margin:auto auto 0;border:0;border-radius:26px 26px 0 0;padding:20px 20px calc(24px + env(safe-area-inset-bottom));background:#fff;color:#13233a;max-height:88dvh;overflow:auto}
+dialog::backdrop{background:#0008}
+dialog h2{font:800 18px var(--round);margin:0 0 4px}
+dialog h3{font:800 14px var(--round);margin:22px 0 2px;color:#566a82}
+label{display:block;font-size:14px;font-weight:700;margin:14px 0 4px}
+label small{display:block;font-weight:400;color:#566a82;font-size:12px}
+input{width:100%;min-height:48px;padding:10px 12px;font:600 17px var(--sans);border:1px solid #b9c7d8;border-radius:12px;background:#f8fafd;color:#13233a}
+input[type=range]{min-height:40px;padding:0}
+dialog button{font:700 14px var(--sans);min-height:48px;padding:0 16px;border:0;border-radius:14px;background:#e4ecf6;color:#1d4a7c;cursor:pointer}
+dialog button.main{background:#0f4a5c;color:#fff;width:100%;margin-top:20px}
+dialog button.setting-ok{display:block;margin:6px 0 12px auto;min-height:36px;padding:0 22px;background:#0f4a5c;color:#fff}
+dialog button.on{background:#0f4a5c;color:#fff}
+.chips{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.hint{font-size:12px;color:#566a82;margin:6px 0 0}
+:focus-visible{outline:3px solid #fff;outline-offset:3px}dialog :focus-visible{outline-color:#2f5f93}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body data-s="ok">
+<svg class="leaf" viewBox="0 0 100 100" aria-hidden="true"><path fill="#fff" d="M50 97C49 72 20 58 6 30 24 14 44 22 50 34 56 22 76 14 94 30 80 58 51 72 50 97Z"/></svg>
+<main class="app">
+  <div class="top">
+    <div class="brand">🚌 Campus Flow<small id="dayTag">八王子キャンパス</small></div>
+    <button class="gear" id="gear" aria-label="設定を開く">⚙</button>
+  </div>
+
+  <div class="ringwrap">
+    <svg viewBox="0 0 220 220" aria-hidden="true"><circle class="track" cx="110" cy="110" r="96"/><circle class="arc" id="arc" cx="110" cy="110" r="96" stroke-dasharray="603.19" stroke-dashoffset="603.19"/></svg>
+    <div class="center"><small>⌛ 滞在可能時間</small><div class="num"><span id="bigNum">--</span><em id="bigUnit"></em></div><div class="clk" id="clockTxt"></div></div>
+  </div>
+
+  <div class="msg" role="status" aria-live="polite"><h1 id="bTitle"></h1><p id="bText"></p></div>
+  <p class="note" id="note"></p>
+
+  <div class="tiles">
+    <div class="tile"><small>📚 次の講義</small><b id="fClass">--:--</b></div>
+    <div class="tile"><small>🚌 帰りのバス</small><b id="fBus">--:--</b></div>
+    <div class="tile key"><small>🚶 出発</small><b id="fLeave">--:--</b></div>
+  </div>
+  <div class="bar" id="bar" aria-hidden="true"></div>
+  <div class="cap" aria-hidden="true"><span>外出</span><span>帰り道</span><span>余裕</span></div>
+</main>
+
+<dialog id="sheet">
+  <h2>設定</h2>
+  <label for="classTime">次の講義の開始時刻</label><input type="time" id="classTime" value="13:15"><button type="button" class="setting-ok" data-for="classTime">OK</button>
+  <label for="toStop">今いる場所からバス停まで<small>歩く時間（分）</small></label><input type="number" inputmode="numeric" id="toStop" min="0" max="120" value="10"><button type="button" class="setting-ok" data-for="toStop">OK</button>
+  <label for="toClass">大学のバス停から教室まで<small>歩く時間（分）</small></label><input type="number" inputmode="numeric" id="toClass" min="0" max="120" value="10"><button type="button" class="setting-ok" data-for="toClass">OK</button>
+  <label for="margin">講義の何分前に着きたいか<small>余裕の時間（分）。おすすめは30分</small></label><input type="number" inputmode="numeric" id="margin" min="0" max="120" value="30"><button type="button" class="setting-ok" data-for="margin">OK</button>
+  
+  <h3>出発前の通知</h3>
+
+<label for="notifyBefore">
+  出発の何分前に通知するか
+</label>
+
+<select id="notifyBefore">
+  <option value="5">5分前</option>
+  <option value="10" selected>10分前</option>
+  <option value="15">15分前</option>
+</select>
+
+<button type="button" id="enableNotifications">
+  🔔 通知を有効にする
+</button>
+<p id="notificationStatus" class="hint">
+  通知はまだ有効になっていません
+</p>
+<p class="hint">🔊 通知を有効にすると、アプリを開いている間に出発前の音が鳴ります。音を出すには端末の音量も確認してください。</p>
+  
+  <h3>デモ用（発表・確認のため）</h3>
+  <label for="nowSlider">現在時刻を動かす<small id="sliderTxt">いまの時刻を使っています</small></label>
+  <input type="range" id="nowSlider" min="420" max="1320" step="5" value="660">
+  <label for="dateIn">日付</label><input type="date" id="dateIn">
+  <div class="chips">
+    <button data-s="normal" type="button">ふつう</button><button data-s="tight" type="button">時間が少ない</button>
+    <button data-s="nobus" type="button">バスなし</button><button data-s="off" type="button">運休日</button>
+    <button data-s="missing" type="button">設定が足りない</button><button id="liveBtn" type="button">いまの時刻に戻す</button>
+  </div>
+  <p class="hint">出典：グループ共有の時刻表PDF（2026年11月分）。道路事情で時刻どおりに運行しないことがあります。</p>
+  <button class="main" id="close" type="button">閉じる</button>
+</dialog>
+
+<script>
+
+var TT={"weekday":[["7:29","7:39"],["7:38","7:48"],["7:45","7:55"],["7:53","8:03"],["7:59","8:09"],["8:07","8:17"],["8:16","8:26"],["9:22","9:32"],["9:33","9:43"],["9:44","9:54"],["9:56","10:06"],["10:01","10:11"],["10:10","10:20"],["10:19","10:29"],["10:25","10:35"],["10:30","10:40"],["10:41","10:51"],["10:48","10:58"],["10:57","11:07"],["11:03","11:13"],["11:17","11:27"],["11:23","11:33"],["11:37","11:47"],["11:44","11:54"],["11:57","12:07"],["12:03","12:13"],["12:08","12:18"],["12:17","12:27"],["12:23","12:33"],["12:37","12:47"],["12:44","12:54"],["12:50","13:00"],["12:57","13:07"],["13:03","13:13"],["13:17","13:27"],["13:23","13:33"],["13:37","13:47"],["13:44","13:54"],["13:57","14:07"],["14:04","14:14"],["14:17","14:27"],["14:23","14:33"],["14:37","14:47"],["14:44","14:54"],["14:57","15:07"],["15:04","15:14"],["15:09","15:19"],["15:21","15:31"],["15:28","15:38"],["15:41","15:51"],["15:51","16:01"],["16:03","16:13"],["16:16","16:26"],["16:26","16:36"],["16:36","16:46"],["16:46","16:56"],["17:25","17:35"],["17:34","17:44"],["17:43","17:53"],["17:52","18:02"],["18:00","18:10"],["18:09","18:19"],["18:17","18:27"],["18:27","18:37"],["18:37","18:47"],["18:51","19:01"],["19:00","19:10"],["19:12","19:22"],["19:22","19:32"],["19:34","19:44"],["19:43","19:53"],["19:54","20:04"],["20:05","20:15"],["20:15","20:25"],["20:25","20:35"],["20:37","20:47"],["20:45","20:55"],["20:56","21:06"],["21:07","21:17"],["21:18","21:28"],["21:27","21:37"]],"saturday":[["8:16","8:28"],["8:44","8:56"],["9:11","9:23"],["9:34","9:46"],["10:25","10:37"],["11:36","11:48"],["12:36","12:48"],["13:16","13:28"],["14:16","14:28"],["15:29","15:41"],["16:29","16:41"],["17:20","17:32"],["17:49","18:01"],["18:20","18:32"],["19:14","19:26"]],"holiday":[["7:34","7:46"],["7:44","7:56"],["7:55","8:07"],["8:06","8:18"],["8:16","8:28"],["8:25","8:37"],["8:32","8:44"],["8:44","8:56"],["8:51","9:03"],["9:02","9:14"],["9:11","9:23"],["9:25","9:37"],["9:34","9:46"],["9:40","9:52"],["9:47","9:59"],["9:56","10:08"],["10:05","10:17"],["10:14","10:26"],["10:25","10:37"],["10:36","10:48"],["10:45","10:57"],["10:56","11:08"],["11:16","11:28"],["11:36","11:48"],["11:56","12:08"],["12:03","12:15"],["12:16","12:28"],["12:23","12:35"],["12:36","12:48"],["12:43","12:55"],["12:56","13:08"],["13:16","13:28"],["13:36","13:48"],["13:56","14:08"],["14:16","14:28"],["14:36","14:48"],["14:56","15:08"],["15:09","15:21"],["15:20","15:32"],["15:29","15:41"],["15:39","15:51"],["15:49","16:01"],["15:59","16:11"],["16:09","16:21"],["16:20","16:32"],["16:29","16:41"],["16:46","16:58"],["17:00","17:12"],["17:09","17:21"],["17:20","17:32"],["17:29","17:41"],["17:40","17:52"],["17:49","18:01"],["18:00","18:12"],["18:07","18:19"],["18:20","18:32"],["18:31","18:43"],["18:42","18:54"],["18:55","19:07"],["19:04","19:16"],["19:14","19:26"],["19:24","19:36"],["19:46","19:58"],["19:58","20:10"],["20:18","20:30"],["20:37","20:49"],["20:58","21:10"],["21:09","21:21"],["21:28","21:40"]],"nov21":[["7:35","7:47"],["7:44","7:56"],["7:55","8:07"],["8:06","8:18"],["8:16","8:28"],["8:25","8:37"],["8:32","8:44"],["8:44","8:56"],["8:51","9:03"],["9:02","9:14"],["9:11","9:23"],["9:18","9:30"],["9:25","9:37"],["9:34","9:46"],["9:40","9:52"],["9:47","9:59"],["9:56","10:08"],["10:05","10:17"],["10:14","10:26"],["10:25","10:37"],["10:36","10:48"],["10:45","10:57"],["10:56","11:08"],["11:06","11:18"],["11:16","11:28"],["11:26","11:38"],["11:36","11:48"],["11:46","11:58"],["11:56","12:08"],["12:03","12:15"],["12:16","12:28"],["12:23","12:35"],["12:36","12:48"],["12:43","12:55"],["12:56","13:08"],["13:06","13:18"],["13:16","13:28"],["13:26","13:38"],["13:36","13:48"],["13:46","13:58"],["13:56","14:08"],["14:06","14:18"],["14:16","14:28"],["14:26","14:38"],["14:36","14:48"],["14:46","14:58"],["14:56","15:08"],["15:09","15:21"],["15:20","15:32"],["15:29","15:41"],["15:39","15:51"],["15:49","16:01"],["15:59","16:11"],["16:09","16:21"],["16:20","16:32"],["16:29","16:41"],["16:39","16:51"],["16:49","17:01"],["16:59","17:11"],["17:09","17:21"],["17:20","17:32"],["17:29","17:41"],["17:39","17:51"],["17:49","18:01"],["18:20","18:32"],["19:14","19:26"]]};
+
+var GAPS=[["8:16","9:22"],["16:46","17:25"],["19:00","19:12"]];
+var OUT="※この時刻表は2026年11月分です。別の月は実際の運行を確認してください。";
+var $=function(i){return document.getElementById(i)};
+var demo=false,C=603.19;
+
+function toMin(s){if(!/^\d{1,2}:\d{2}$/.test(s||""))return NaN;var p=s.split(":"),h=+p[0],m=+p[1];return h<24&&m<60?h*60+m:NaN}
+function fmt(n){return String(Math.floor(n/60)).padStart(2,"0")+":"+String(n%60).padStart(2,"0")}
+function num(id){var v=$(id).value;if(v==="")return null;var n=Number(v);return Number.isInteger(n)&&n>=0&&n<=120?n:null}
+function store(set,v){try{if(set)localStorage.setItem("campusFlow5",JSON.stringify(v));else return JSON.parse(localStorage.getItem("campusFlow5")||"null")}catch(e){return null}}
+function realNow(){var d=new Date();return d.getHours()*60+d.getMinutes()}
+function todayStr(){var d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
+
+function dayInfo(){
+  var v=$("dateIn").value;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(v||""))return{bad:true,list:[],label:"",type:"",extra:""};
+  var p=v.split("-"),dow=new Date(+p[0],+p[1]-1,+p[2]).getDay(),ex=(p[0]+"-"+p[1])==="2026-11"?"":OUT;
+  if(v==="2026-11-21")return{type:"nov21",list:TT.nov21,label:"11/21 特別運行",extra:ex};
+  if(v==="2026-11-03"||v==="2026-11-23")return{type:"holiday",list:TT.holiday,label:"祝日授業日の運行",extra:ex};
+  if(dow===0)return{off:true,type:"off",list:[],label:"運休日",extra:ex};
+  if(dow===6)return{type:"saturday",list:TT.saturday,label:"土曜日の運行",extra:ex};
+  return{type:"weekday",list:TT.weekday,label:"通常運行",extra:ex};
+}
+function gapNote(dt,from,to){
+  if(dt.type!=="weekday")return"";
+  return GAPS.some(function(g){return toMin(g[0])<to&&toMin(g[1])>from})?"この時間帯は時刻のないシャトルもあります（時刻のあるバスだけで計算）。":"";
+}
+function compute(){
+  var dt=dayInfo(),now=demo?+$("nowSlider").value:realNow();
+  var clsStr=$("classTime").value,cls=toMin(clsStr),toStop=num("toStop"),toClass=num("toClass"),margin=num("margin");
+  var r={dt:dt,now:now,clsStr:clsStr,gap:""};
+  if(dt.bad||isNaN(cls)||toStop===null||toClass===null||margin===null){r.kind="missing";return r}
+  if(dt.off){r.kind="off";return r}
+  if(cls<=now){r.kind="past";return r}
+  var cutoff=cls-toClass-margin;          
+  var ok=dt.list.filter(function(b){return toMin(b[1])<=cutoff&&toMin(b[0])-toStop>=now});
+  r.gap=gapNote(dt,now+toStop,cutoff);r.total=cls-now;
+  if(!ok.length){r.kind="none";return r}
+  var b=ok[ok.length-1],dep=toMin(b[0]),arr=toMin(b[1]),leave=dep-toStop;
+  r.kind="ok";r.bus=b;r.leave=leave;r.avail=leave-now;
+  r.parts=[r.avail,toStop+(arr-dep),(cutoff-arr)+toClass+margin];
+  return r;
+}
+function say(s,t,p){document.body.dataset.s=s;$("bTitle").textContent=t;$("bText").textContent=p}
+function render(){
+  var r=compute();
+  $("dayTag").textContent=r.dt.label||"八王子キャンパス";
+  $("clockTxt").textContent=fmt(r.now)+" 時点"+(demo?"（デモ）":"");
+  $("liveBtn").className=demo?"on":"";
+  $("sliderTxt").textContent=demo?"テスト用の時刻："+fmt(r.now):"いまの時刻を使っています";
+  if(!demo)$("nowSlider").value=Math.min(1320,Math.max(420,r.now));
+  $("fClass").textContent=r.clsStr||"--:--";$("fBus").textContent="--:--";$("fLeave").textContent="--:--";
+  $("bigNum").textContent="--";$("bigUnit").textContent="";$("bar").innerHTML="";
+  var frac=0;
+  if(r.kind==="ok"){
+    var m=r.avail;
+    $("bigNum").textContent=m;$("bigUnit").textContent="分";$("fBus").textContent=r.bus[0];$("fLeave").textContent=fmt(r.leave);
+    frac=r.total>0?m/r.total:0;
+    $("bar").innerHTML=r.parts.map(function(v,i){return v>0?'<i class="'+"abc".charAt(i)+'" style="flex:'+v+'"></i>':""}).join("");
+    if(m>15)say("ok","ゆっくり大丈夫",fmt(r.leave)+" に出れば、"+r.bus[0]+"発のバスで間に合います");
+    else if(m>0)say("warn","そろそろ戻る準備を","あと"+m+"分で出発。"+r.bus[0]+"発のバスに乗ります");
+    else say("warn","いま出発してください","これが乗れる最後のタイミングです（"+r.bus[0]+"発）");
+  }else if(r.kind==="none"){
+    $("bigNum").textContent="0";$("bigUnit").textContent="分";$("fBus").textContent="なし";
+    say("bad","間に合うバスがありません","このままキャンパスにいましょう");
+  }else if(r.kind==="off"){
+    $("fBus").textContent="運休";say("bad","今日はバスが運休です","日曜・祝日・大学休業日は運休します");
+  }else if(r.kind==="past"){
+    say("warn","講義はもう始まっています","⚙ から次の講義の時刻を入れてください");
+  }else{
+    say("bad","設定を確認してください","⚙ から講義の時刻と歩く時間を入れてください");
+  }
+  $("arc").style.strokeDashoffset=C*(1-Math.max(0,Math.min(1,frac)));
+  $("note").textContent=(r.gap+" "+(r.dt.extra||"")).trim();
+  if(r.kind==="ok"||r.kind==="none")store(true,{classTime:r.clsStr,toStop:num("toStop"),toClass:num("toClass"),margin:num("margin")});
+}
+var SCEN={normal:[660,"13:15","2026-11-12"],tight:[725,"13:15","2026-11-12"],nobus:[740,"13:15","2026-11-12"],off:[660,"13:15","2026-11-15"],missing:[660,"","2026-11-12"]};
+document.querySelectorAll("[data-s]").forEach(function(b){
+  b.addEventListener("click",function(){var s=SCEN[b.dataset.s];demo=true;$("nowSlider").value=s[0];$("classTime").value=s[1];$("dateIn").value=s[2];render()});
+});
+$("nowSlider").addEventListener("input",function(){demo=true;render()});
+$("liveBtn").addEventListener("click",function(){demo=false;$("dateIn").value=todayStr();render()});
+["classTime","toStop","toClass","margin","dateIn"].forEach(function(id){$(id).addEventListener("input",render)});
+document.querySelectorAll(".setting-ok").forEach(function(b){
+  b.addEventListener("click",function(){
+    var field=$(b.getAttribute("data-for"));
+    field.blur();
+    render();
+    b.textContent="✓ OK";
+    setTimeout(function(){b.textContent="OK"},1200);
+  });
+});
+$("gear").addEventListener("click",function(){var d=$("sheet");if(d.showModal)d.showModal();else d.setAttribute("open","")});
+$("close").addEventListener("click",function(){var d=$("sheet");if(d.close)d.close();else d.removeAttribute("open")});
+var sv=store(false);if(sv){["classTime","toStop","toClass","margin"].forEach(function(k){if(sv[k]!==undefined&&sv[k]!==null)$(k).value=sv[k]})}
+$("dateIn").value=todayStr();
+render();
+setInterval(function(){if(!demo)render()},60000);
+
+$("enableNotifications").addEventListener("click", async function () {
+  const status = $("notificationStatus");
+
+  if (!("Notification" in window)) {
+    status.textContent = "このブラウザでは通知を利用できません";
+    return;
+  }
+
+  if (!window.isSecureContext) {
+    status.textContent = "通知にはHTTPS接続が必要です";
+    return;
+  }
+
+  try {
+    const permission = await Notification.requestPermission();
+    status.textContent = permission === "granted"
+      ? "通知が許可されました"
+      : "通知が許可されていません";
+  } catch (error) {
+    status.textContent = "通知の設定に失敗しました";
+  }
+});
+
+
+var reminderAudio=null,reminderEnabled=false,lastReminderKey="";
+function playReminderBeep(){
+  if(!reminderAudio)return;
+  try{
+    if(reminderAudio.state==="suspended")reminderAudio.resume().catch(function(){});
+    var t=reminderAudio.currentTime;
+    [0,0.28,0.56].forEach(function(delay){
+      var o=reminderAudio.createOscillator(),g=reminderAudio.createGain();
+      o.type="sine";o.frequency.setValueAtTime(880,t+delay);
+      g.gain.setValueAtTime(0.0001,t+delay);
+      g.gain.exponentialRampToValueAtTime(0.22,t+delay+0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+delay+0.18);
+      o.connect(g);g.connect(reminderAudio.destination);
+      o.start(t+delay);o.stop(t+delay+0.2);
+    });
+  }catch(e){}
+}
+function checkDepartureReminder(){
+  if(!reminderEnabled||demo)return;
+  var r=compute();
+  if(r.kind!=="ok")return;
+  var before=Number($("notifyBefore").value)||10;
+  var minutesLeft=r.leave-realNow();
+  var key=$("dateIn").value+"/"+r.leave+"/"+before;
+  if(minutesLeft>=0&&minutesLeft<=before&&key!==lastReminderKey){
+    lastReminderKey=key;
+    playReminderBeep();
+    if("Notification" in window&&Notification.permission==="granted"){
+      try{new Notification("🚌 Campus Flow 出発前のお知らせ",{body:"出発まであと"+minutesLeft+"分。"+fmt(r.leave)+"に出発してください。"});}catch(e){}
+    }
+    $("notificationStatus").textContent="🔔 出発前の通知を送りました（"+fmt(realNow())+"）";
+  }
+}
+$("enableNotifications").addEventListener("click",function(){
+  try{
+    var AC=window.AudioContext||window.webkitAudioContext;
+    if(AC){reminderAudio=reminderAudio||new AC();reminderAudio.resume().catch(function(){});}
+    reminderEnabled=true;
+    $("notificationStatus").textContent="🔊 出発前の音を有効にしました（アプリを開いている間のみ）";
+    checkDepartureReminder();
+  }catch(e){$("notificationStatus").textContent="音声を有効にできませんでした";}
+});
+$("notifyBefore").addEventListener("change",function(){lastReminderKey="";});
+setInterval(checkDepartureReminder,1000);
+
+</script>
+</body>
+</html>
