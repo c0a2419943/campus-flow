@@ -56,6 +56,26 @@ dialog button.on{background:#0f4a5c;color:#fff}
 .hint{font-size:12px;color:#566a82;margin:6px 0 0}
 :focus-visible{outline:3px solid #fff;outline-offset:3px}dialog :focus-visible{outline-color:#2f5f93}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+.top-actions{display:flex;align-items:center;gap:10px}
+.timetable-open{min-height:44px;padding:0 14px;border:1px solid #ffffff52;border-radius:24px;background:#ffffff1f;color:#fff;font:700 14px var(--sans);cursor:pointer}
+.schedule-summary{margin:12px 0 0;text-align:center;font-size:13px;line-height:1.6;color:#fffe;overflow-wrap:anywhere}
+#timetable{width:min(100%,760px)}
+.timetable-scroll{overflow-x:auto;margin-top:14px}
+.timetable-grid{width:100%;min-width:620px;border-collapse:collapse;table-layout:fixed}
+.timetable-grid th,.timetable-grid td{border:1px solid #d8e1eb;padding:6px;text-align:center}
+.timetable-grid th{font-size:13px;background:#edf3f8}
+.timetable-grid .period{width:104px}
+.timetable-grid .period small{display:block;font-weight:400;white-space:nowrap}
+.timetable-grid .current-day{background:#dbeaf0}
+.timetable-grid td.free{background:#e2f3ec}
+.timetable-grid td.free input{border-color:#578576;background:#f6fcf9}
+.timetable-grid td.free input::placeholder{color:#386855}
+.timetable-grid input{font-size:16px;padding:6px;min-height:44px}
+.timetable-actions{display:flex;gap:12px;align-items:center;justify-content:flex-end;margin-top:12px}
+.timetable-actions button.main{width:auto;margin:0}
+.schedule-toggle{display:flex;align-items:center;gap:8px}
+.schedule-toggle input{width:20px;min-height:20px;margin:0;flex:none}
+[hidden]{display:none!important}
 </style>
 </head>
 <body data-s="ok">
@@ -63,7 +83,10 @@ dialog button.on{background:#0f4a5c;color:#fff}
 <main class="app">
   <div class="top">
     <div class="brand">🚌 Campus Flow<small id="dayTag">八王子キャンパス</small></div>
-    <button class="gear" id="gear" aria-label="設定を開く">⚙</button>
+    <div class="top-actions">
+      <button type="button" class="timetable-open" id="openTimetable">時間割</button>
+      <button class="gear" id="gear" aria-label="設定を開く">⚙</button>
+    </div>
   </div>
 
   <div class="ringwrap">
@@ -72,6 +95,7 @@ dialog button.on{background:#0f4a5c;color:#fff}
   </div>
 
   <div class="msg" role="status" aria-live="polite"><h1 id="bTitle"></h1><p id="bText"></p></div>
+  <p class="schedule-summary" id="scheduleSummary" hidden></p>
   <p class="note" id="note"></p>
 
   <div class="tiles">
@@ -83,9 +107,31 @@ dialog button.on{background:#0f4a5c;color:#fff}
   <div class="cap" aria-hidden="true"><span>外出</span><span>帰り道</span><span>余裕</span></div>
 </main>
 
+<dialog id="timetable" aria-labelledby="timetableTitle">
+  <form id="timetableForm">
+    <h2 id="timetableTitle">時間割</h2>
+    <p class="hint" id="timetableHint">受けている授業の名前を入力してください。授業に挟まれた空欄は「空きコマ」と表示します。スマートフォンでは表を横にスクロールできます。</p>
+    <div class="timetable-scroll" tabindex="0" role="region" aria-label="週間時間割">
+      <table class="timetable-grid" aria-describedby="timetableHint">
+        <thead><tr id="scheduleHeader"><th scope="col" class="period">時限</th></tr></thead>
+        <tbody id="scheduleRows"></tbody>
+      </table>
+    </div>
+    <p id="timetableStatus" class="hint" role="status"></p>
+    <div class="timetable-actions">
+      <button type="button" id="cancelTimetable">閉じる</button>
+      <button type="submit" class="main">保存</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="sheet">
   <h2>設定</h2>
-  <label for="classTime">次の講義の開始時刻</label><input type="time" id="classTime" value="13:15"><button type="button" class="setting-ok" data-for="classTime">OK</button>
+  <label class="schedule-toggle"><input type="checkbox" id="useTimetable" checked>時間割から次の講義を選ぶ</label>
+  <p id="scheduleSettingStatus" class="hint" role="status"></p>
+  <div id="manualClass">
+    <label for="classTime">次の講義の開始時刻</label><input type="time" id="classTime" value="13:15"><button type="button" class="setting-ok" data-for="classTime">OK</button>
+  </div>
   <label for="toStop">今いる場所からバス停まで<small>歩く時間（分）</small></label><input type="number" inputmode="numeric" id="toStop" min="0" max="120" value="10"><button type="button" class="setting-ok" data-for="toStop">OK</button>
   <label for="toClass">大学のバス停から教室まで<small>歩く時間（分）</small></label><input type="number" inputmode="numeric" id="toClass" min="0" max="120" value="10"><button type="button" class="setting-ok" data-for="toClass">OK</button>
   <label for="margin">講義の何分前に着きたいか<small>余裕の時間（分）。おすすめは30分</small></label><input type="number" inputmode="numeric" id="margin" min="0" max="120" value="30"><button type="button" class="setting-ok" data-for="margin">OK</button>
@@ -139,6 +185,145 @@ function store(set,v){try{if(set)localStorage.setItem("campusFlow5",JSON.stringi
 function realNow(){var d=new Date();return d.getHours()*60+d.getMinutes()}
 function todayStr(){var d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
 
+// Standard Hachioji periods: Tokyo University of Technology, Gakuho No. 70.
+const periods = [
+  ["08:50", "10:30"], ["10:45", "12:25"], ["13:15", "14:55"],
+  ["15:10", "16:50"], ["17:05", "18:45"]
+];
+const scheduleDays = ["月", "火", "水", "木", "金"];
+const scheduleKey = "campusFlowTimetable";
+let timetable = {};
+let demoManualClass = false;
+
+try {
+  const saved = JSON.parse(localStorage.getItem(scheduleKey));
+  if (saved && saved.entries) {
+    timetable = saved.entries;
+    $("useTimetable").checked = saved.useTimetable !== false;
+  }
+} catch (error) {
+  // A new timetable is still available if browser storage cannot be read.
+}
+
+function selectedWeekday() {
+  const value = $("dateIn").value;
+  return value ? new Date(value + "T12:00:00").getDay() : NaN;
+}
+
+function scheduleForDay(now) {
+  const day = selectedWeekday() - 1;
+  const lessons = periods.map(([start, end], index) => ({
+    start, end, title: timetable[day + "-" + index], index
+  })).filter(lesson => typeof lesson.title === "string" && lesson.title.trim());
+  const current = lessons.find(lesson => toMin(lesson.start) <= now && now < toMin(lesson.end));
+  const next = lessons.find(lesson => toMin(lesson.start) > now);
+  const free = periods.flatMap(([start, end], index) =>
+    lessons.length && index > lessons[0].index && index < lessons[lessons.length - 1].index
+      && !lessons.some(lesson => lesson.index === index) && now < toMin(end)
+      ? [{start, end, index}] : []
+  );
+  return {lessons, current, next, free};
+}
+
+function updateScheduleSummary(result) {
+  const line = $("scheduleSummary");
+  line.hidden = !result.schedule;
+  if (!result.schedule) return;
+  const {lessons, current, next, free} = result.schedule;
+  const items = [];
+  if (!lessons.length) items.push("この曜日の登録授業はありません");
+  else if (current) items.push("授業中 " + current.title + "（" + current.end + "まで）");
+  else if (!next) items.push("今日の登録授業は終了しました");
+  if (next) items.push("次の講義 " + next.title + " " + next.start);
+  if (free.length) items.push("空きコマ " + free.map(slot =>
+    (slot.index + 1) + "限 " + slot.start + "〜" + slot.end
+  ).join("、"));
+  line.textContent = items.join(" ／ ");
+}
+
+const scheduleDialog = $("timetable");
+const scheduleInputs = [];
+const scheduleHeaders = [];
+const header = $("scheduleHeader");
+for (const name of scheduleDays) {
+  const th = document.createElement("th");
+  th.scope = "col";
+  th.textContent = name;
+  header.append(th);
+  scheduleHeaders.push(th);
+}
+periods.forEach(([start, end], index) => {
+  const row = document.createElement("tr");
+  const th = document.createElement("th");
+  th.scope = "row";
+  th.textContent = (index + 1) + "限";
+  const time = document.createElement("small");
+  time.textContent = start + "〜" + end;
+  th.append(time);
+  row.append(th);
+  scheduleDays.forEach((day, col) => {
+    const cell = document.createElement("td");
+    const input = document.createElement("input");
+    input.type = "text";
+    input.maxLength = 80;
+    input.autocomplete = "off";
+    input.setAttribute("aria-label", day + "曜日 " + (index + 1) + "限の授業名");
+    cell.append(input);
+    row.append(cell);
+    scheduleInputs.push({input, cell, col, index, key: col + "-" + index});
+  });
+  $("scheduleRows").append(row);
+});
+
+function markFreePeriods() {
+  const occupied = scheduleDays.map((_, col) =>
+    scheduleInputs.filter(slot => slot.col === col && slot.input.value.trim()).map(slot => slot.index)
+  );
+  scheduleInputs.forEach(({input, cell, col, index}) => {
+    const slots = occupied[col];
+    const free = !input.value.trim() && index > slots[0] && index < slots[slots.length - 1];
+    cell.classList.toggle("free", free);
+    input.placeholder = free ? "空きコマ" : "";
+  });
+}
+
+function saveTimetable() {
+  try {
+    localStorage.setItem(scheduleKey, JSON.stringify({
+      entries: timetable,
+      useTimetable: $("useTimetable").checked
+    }));
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+$("openTimetable").addEventListener("click", () => {
+  scheduleInputs.forEach(({input, key}) => { input.value = timetable[key] || ""; });
+  scheduleHeaders.forEach((th, col) => th.classList.toggle("current-day", col === selectedWeekday() - 1));
+  $("timetableStatus").textContent = "";
+  markFreePeriods();
+  scheduleDialog.showModal();
+});
+$("cancelTimetable").addEventListener("click", () => scheduleDialog.close());
+$("timetableForm").addEventListener("input", markFreePeriods);
+$("timetableForm").addEventListener("submit", event => {
+  event.preventDefault();
+  timetable = Object.fromEntries(scheduleInputs.filter(({input}) => input.value.trim())
+    .map(({key, input}) => [key, input.value.trim()]));
+  demoManualClass = false;
+  const saved = saveTimetable();
+  render();
+  if (saved) scheduleDialog.close();
+  else $("timetableStatus").textContent = "この画面には反映しました。ブラウザーに保存できなかったため、再読み込みすると消えます。";
+});
+$("useTimetable").addEventListener("change", () => {
+  demoManualClass = false;
+  $("scheduleSettingStatus").textContent = saveTimetable() ? "" : "この設定は再読み込みすると元に戻ります。";
+  render();
+});
+
 function dayInfo(){
   var v=$("dateIn").value;
   if(!/^\d{4}-\d{2}-\d{2}$/.test(v||""))return{bad:true,list:[],label:"",type:"",extra:""};
@@ -155,8 +340,12 @@ function gapNote(dt,from,to){
 }
 function compute(){
   var dt=dayInfo(),now=demo?+$("nowSlider").value:realNow();
-  var clsStr=$("classTime").value,cls=toMin(clsStr),toStop=num("toStop"),toClass=num("toClass"),margin=num("margin");
-  var r={dt:dt,now:now,clsStr:clsStr,gap:""};
+  var schedule = $("useTimetable").checked && !demoManualClass && Object.keys(timetable).length && !dt.bad
+    ? scheduleForDay(now) : null;
+  var clsStr=schedule ? (schedule.next?.start || "") : $("classTime").value,cls=toMin(clsStr),toStop=num("toStop"),toClass=num("toClass"),margin=num("margin");
+  var r={dt:dt,now:now,clsStr:clsStr,gap:"",schedule:schedule};
+  if (schedule?.current) {r.kind="in-class";return r}
+  if (schedule && !schedule.next) {r.kind="no-class";return r}
   if(dt.bad||isNaN(cls)||toStop===null||toClass===null||margin===null){r.kind="missing";return r}
   if(dt.off){r.kind="off";return r}
   if(cls<=now){r.kind="past";return r}
@@ -172,6 +361,8 @@ function compute(){
 function say(s,t,p){document.body.dataset.s=s;$("bTitle").textContent=t;$("bText").textContent=p}
 function render(){
   var r=compute();
+  updateScheduleSummary(r);
+  $("manualClass").hidden = !!r.schedule;
   $("dayTag").textContent=r.dt.label||"八王子キャンパス";
   $("clockTxt").textContent=fmt(r.now)+" 時点"+(demo?"（デモ）":"");
   $("liveBtn").className=demo?"on":"";
@@ -193,21 +384,25 @@ function render(){
     say("bad","間に合うバスがありません","このままキャンパスにいましょう");
   }else if(r.kind==="off"){
     $("fBus").textContent="運休";say("bad","今日はバスが運休です","日曜・祝日・大学休業日は運休します");
+  }else if(r.kind==="in-class"){
+    say("warn","授業時間中です","授業終了後の時刻で外出できる時間を確認できます");
+  }else if(r.kind==="no-class"){
+    say("ok","今日の次の講義はありません","時間割で登録内容を確認できます");
   }else if(r.kind==="past"){
     say("warn","講義はもう始まっています","⚙ から次の講義の時刻を入れてください");
   }else{
-    say("bad","設定を確認してください","⚙ から講義の時刻と歩く時間を入れてください");
+    say("bad","設定を確認してください","⚙ から講義・日付・歩く時間の設定を確認してください");
   }
   $("arc").style.strokeDashoffset=C*(1-Math.max(0,Math.min(1,frac)));
   $("note").textContent=(r.gap+" "+(r.dt.extra||"")).trim();
-  if(r.kind==="ok"||r.kind==="none")store(true,{classTime:r.clsStr,toStop:num("toStop"),toClass:num("toClass"),margin:num("margin")});
+  if(r.kind==="ok"||r.kind==="none")store(true,{classTime:$("classTime").value,toStop:num("toStop"),toClass:num("toClass"),margin:num("margin")});
 }
 var SCEN={normal:[660,"13:15","2026-11-12"],tight:[725,"13:15","2026-11-12"],nobus:[740,"13:15","2026-11-12"],off:[660,"13:15","2026-11-15"],missing:[660,"","2026-11-12"]};
-document.querySelectorAll("[data-s]").forEach(function(b){
-  b.addEventListener("click",function(){var s=SCEN[b.dataset.s];demo=true;$("nowSlider").value=s[0];$("classTime").value=s[1];$("dateIn").value=s[2];render()});
+document.querySelectorAll(".chips [data-s]").forEach(function(b){
+  b.addEventListener("click",function(){var s=SCEN[b.dataset.s];demo=true;demoManualClass=true;$("nowSlider").value=s[0];$("classTime").value=s[1];$("dateIn").value=s[2];render()});
 });
-$("nowSlider").addEventListener("input",function(){demo=true;render()});
-$("liveBtn").addEventListener("click",function(){demo=false;$("dateIn").value=todayStr();render()});
+$("nowSlider").addEventListener("input",function(){demo=true;demoManualClass=false;render()});
+$("liveBtn").addEventListener("click",function(){demo=false;demoManualClass=false;$("dateIn").value=todayStr();render()});
 ["classTime","toStop","toClass","margin","dateIn"].forEach(function(id){$(id).addEventListener("input",render)});
 document.querySelectorAll(".setting-ok").forEach(function(b){
   b.addEventListener("click",function(){
