@@ -76,7 +76,18 @@ dialog button.on{background:#0f4a5c;color:#fff}
 .schedule-toggle{display:flex;align-items:center;gap:8px}
 .schedule-toggle input{width:20px;min-height:20px;margin:0;flex:none}
 [hidden]{display:none!important}
+/* 周辺店舗マップ（UI-04） */
+#map{height:280px;border-radius:16px;margin-top:12px;background:#e4ecf6;z-index:0}
+#locBtn,#refreshShops{width:100%;margin-top:10px}
+.stopchips button.on{background:#0f4a5c;color:#fff}
+.shop{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 2px;border-bottom:1px solid #e4ecf6;font-size:14px;cursor:pointer}
+.shop small{display:block;color:#566a82;font-size:12px;margin-top:2px}
+.shop b{white-space:nowrap;font-size:15px}
+.badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;margin-left:6px;background:#e5f4e4;color:#1f6b2a}
+.badge.no{background:#fbebeb;color:#9b2c2c}
 </style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body data-s="ok">
 <svg class="leaf" viewBox="0 0 100 100" aria-hidden="true"><path fill="#fff" d="M50 97C49 72 20 58 6 30 24 14 44 22 50 34 56 22 76 14 94 30 80 58 51 72 50 97Z"/></svg>
@@ -85,6 +96,7 @@ dialog button.on{background:#0f4a5c;color:#fff}
     <div class="brand">🚌 Campus Flow<small id="dayTag">八王子キャンパス</small></div>
     <div class="top-actions">
       <button type="button" class="timetable-open" id="openTimetable">時間割</button>
+      <button class="gear" id="mapBtn" aria-label="周辺の店舗を開く">🗺</button>
       <button class="gear" id="gear" aria-label="設定を開く">⚙</button>
     </div>
   </div>
@@ -167,6 +179,23 @@ dialog button.on{background:#0f4a5c;color:#fff}
   </div>
   <p class="hint">出典：グループ共有の時刻表PDF（2026年11月分）。道路事情で時刻どおりに運行しないことがあります。</p>
   <button class="main" id="close" type="button">閉じる</button>
+</dialog>
+
+<dialog id="mapSheet">
+  <h2>🗺 周辺の店舗</h2>
+  <p class="hint">バス停のまわり500mの店と、バス停からの徒歩時間です。「行ける」は、いまの滞在可能時間で往復できる店です。</p>
+  <div class="chips stopchips">
+    <button type="button" data-stop="hachioji">八王子駅</button>
+    <button type="button" data-stop="minamino">八王子みなみ野駅</button>
+  </div>
+  <div id="map"></div>
+  <p class="hint" id="mapNote"></p>
+  <button type="button" id="locBtn">📍 現在地からバス停までの徒歩時間を設定に入れる</button>
+  <p class="hint" id="mapStatus"></p>
+  <div id="shopList"></div>
+  <button type="button" id="refreshShops">店舗データをサーバーから取り直す</button>
+  <p class="hint">地図：国土地理院（地理院タイル）／店舗データ © OpenStreetMap contributors</p>
+  <button class="main" id="mapClose" type="button">閉じる</button>
 </dialog>
 
 <script>
@@ -488,6 +517,191 @@ $("enableNotifications").addEventListener("click",function(){
 });
 $("notifyBefore").addEventListener("change",function(){lastReminderKey="";});
 setInterval(checkDepartureReminder,1000);
+
+/* ===================================================================
+   周辺店舗マップ（UI-04 / T-08）
+   店舗検索：Overpass API、徒歩時間：OSRM（どちらも無料・登録不要）
+   =================================================================== */
+var STOPS={
+  hachioji:{name:"八王子駅（スクールバス乗り場）",lat:35.654162,lng:139.339220},
+  minamino:{name:"八王子みなみ野駅（スクールバス乗り場）",lat:35.631441,lng:139.330697}
+};
+var SEARCH_RADIUS_M=500,MAX_SHOPS=30;
+var OVERPASS_URLS=[
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://maps.mail.ru/osm/tools/overpass/api/interpreter"
+];
+var OSRM_FOOT="https://routing.openstreetmap.de/routed-foot/table/v1/foot/";
+var KINDS={restaurant:"飲食店",fast_food:"ファストフード",cafe:"カフェ",convenience:"コンビニ"};
+var curStop="hachioji",lmap=null,mapLayer=null,herePos=null,shopMarkers=[];
+
+function distM(a,b){
+  var R=6371000,r=Math.PI/180,dLat=(b[0]-a[0])*r,dLng=(b[1]-a[1])*r;
+  var h=Math.pow(Math.sin(dLat/2),2)+Math.cos(a[0]*r)*Math.cos(b[0]*r)*Math.pow(Math.sin(dLng/2),2);
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+// 直線距離 × 1.3（道の曲がり）÷ 分速80m で概算
+function estWalk(a,b){return Math.max(1,Math.ceil(distM(a,b)*1.3/80))}
+function fetchWithTimeout(url,opt,ms){
+  var c=new AbortController(),t=setTimeout(function(){c.abort()},ms);
+  return fetch(url,Object.assign({},opt||{},{signal:c.signal})).finally(function(){clearTimeout(t)});
+}
+function mapStatus(t){$("mapStatus").textContent=t}
+
+// 1. 周辺店舗の検索（混んでいたら次のサーバーへ）
+async function fetchShops(stop){
+  var c=[stop.lat,stop.lng],around="(around:"+SEARCH_RADIUS_M+","+c[0]+","+c[1]+")";
+  var q='[out:json][timeout:20];(nwr'+around+'["amenity"~"^(restaurant|fast_food|cafe)$"];nwr'+around+'["shop"="convenience"];);out center tags;';
+  for(var i=0;i<OVERPASS_URLS.length;i++){
+    try{
+      mapStatus("店舗を検索しています…（サーバー"+(i+1)+"/"+OVERPASS_URLS.length+"）");
+      var res=await fetchWithTimeout(OVERPASS_URLS[i],{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"data="+encodeURIComponent(q)},15000);
+      if(!res.ok)throw new Error("HTTP "+res.status);
+      var els=(await res.json()).elements||[];
+      var shops=[];
+      els.forEach(function(el){
+        var t=el.tags||{};if(!t.name)return;
+        var lat=el.lat!=null?el.lat:(el.center&&el.center.lat),lng=el.lon!=null?el.lon:(el.center&&el.center.lon);
+        if(lat==null||lng==null)return;
+        shops.push({name:t.name,kind:KINDS[t.amenity]||KINDS[t.shop]||"",lat:lat,lng:lng,hours:t.opening_hours||""});
+      });
+      shops.sort(function(a,b){return distM(c,[a.lat,a.lng])-distM(c,[b.lat,b.lng])});
+      return shops.slice(0,MAX_SHOPS);
+    }catch(e){console.warn("[店舗検索] 失敗:",OVERPASS_URLS[i],e);/* 次のサーバーを試す */}
+  }
+  throw new Error("店舗検索サーバーにつながりません");
+}
+
+// 2. 徒歩時間（OSRM。つながらなければ直線距離で概算）
+async function walkTimes(origin,dests){
+  if(!dests.length)return{min:[],routed:true};
+  var coords=[origin].concat(dests).map(function(p){return p[1]+","+p[0]}).join(";");
+  try{
+    var res=await fetchWithTimeout(OSRM_FOOT+coords+"?sources=0&annotations=duration",{},15000);
+    if(!res.ok)throw new Error("HTTP "+res.status);
+    var d=(await res.json()).durations[0].slice(1);
+    return{min:d.map(function(s,i){return s==null?estWalk(origin,dests[i]):Math.ceil(s/60)}),routed:true};
+  }catch(e){
+    return{min:dests.map(function(p){return estWalk(origin,p)}),routed:false};
+  }
+}
+
+// 3. 一度取れた店舗データはブラウザに保存（サーバーが混んでいても表示できる）
+function shopCache(key,val){
+  try{
+    if(val===undefined)return JSON.parse(localStorage.getItem("campusFlowShops_"+key)||"null");
+    localStorage.setItem("campusFlowShops_"+key,JSON.stringify(val));
+  }catch(e){return null}
+}
+
+async function loadShops(refresh){
+  var stop=STOPS[curStop],c=[stop.lat,stop.lng];
+  var saved=shopCache(curStop),samePlace=saved&&distM(saved.stop,c)<=50;
+  drawMap([]);
+  if(saved&&samePlace&&!refresh){
+    drawShops(saved.shops);
+    mapStatus("保存済みの店舗データを表示しています（"+saved.at+" 取得）"+(saved.routed?"":"。徒歩時間は直線距離からの概算です"));
+    return;
+  }
+  try{
+    var shops=await fetchShops(stop);
+    mapStatus("徒歩時間を計算しています…");
+    var w=await walkTimes(c,shops.map(function(s){return[s.lat,s.lng]}));
+    shops.forEach(function(s,i){s.walk=w.min[i]});
+    shops.sort(function(a,b){return a.walk-b.walk});
+    var d=new Date(),at=(d.getMonth()+1)+"/"+d.getDate()+" "+fmt(d.getHours()*60+d.getMinutes());
+    shopCache(curStop,{stop:c,at:at,shops:shops,routed:w.routed});
+    drawShops(shops);
+    mapStatus(shops.length+"件見つかりました"+(w.routed?"":"（徒歩ルートのサーバーにつながらないため、直線距離から概算）"));
+  }catch(e){
+    if(saved){drawShops(saved.shops);mapStatus("サーバーにつながらないため、前に保存した店舗データを表示しています（"+saved.at+" 取得）");}
+    else{drawShops([]);mapStatus("店舗の検索に失敗しました。少し待ってから「取り直す」を押してください。");}
+  }
+}
+
+// 4. 地図とリストの表示
+function drawMap(){
+  var stop=STOPS[curStop],c=[stop.lat,stop.lng];
+  document.querySelectorAll(".stopchips button").forEach(function(b){b.className=b.dataset.stop===curStop?"on":""});
+  if(!window.L){
+    $("map").style.display="none";
+    $("mapNote").textContent="⚠ 地図を読み込めませんでした。外部と通信できない画面（ファイルのプレビューなど）で開いている可能性があります。Chrome や Edge で直接開いてください。";
+    return;
+  }
+  if(!lmap){
+    lmap=L.map("map",{zoomControl:true}).setView(c,16);
+    // 地図画像は国土地理院の地理院タイル（無料・登録不要、ファイルを直接開いても表示できる）
+    L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png",{maxZoom:18,attribution:'<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank">地理院タイル</a>'}).addTo(lmap);
+    mapLayer=L.layerGroup().addTo(lmap);
+  }
+  mapLayer.clearLayers();shopMarkers=[];
+  L.circle(c,{radius:SEARCH_RADIUS_M,color:"#2f5f93",weight:1,fill:false}).addTo(mapLayer);
+  L.circleMarker(c,{radius:10,color:"#fff",weight:3,fillColor:"#2f5f93",fillOpacity:1}).bindTooltip("🚌 "+stop.name).addTo(mapLayer);
+  if(herePos)L.circleMarker(herePos,{radius:8,color:"#fff",weight:3,fillColor:"#1f9d55",fillOpacity:1}).bindTooltip("📍 現在地").addTo(mapLayer);
+  lmap.setView(c,16);
+  // 画面が開ききってから大きさを測り直し、バス停に寄せ直す
+  setTimeout(function(){lmap.invalidateSize();lmap.setView(c,16)},300);
+}
+function drawShops(shops){
+  var list=$("shopList");list.innerHTML="";
+  var r=compute(),avail=r.kind==="ok"?r.avail:null;
+  if(window.L&&mapLayer){
+    shopMarkers.forEach(function(m){mapLayer.removeLayer(m)});shopMarkers=[];
+  }
+  if(!shops.length){var p=document.createElement("p");p.className="hint";p.textContent="周辺に店舗が見つかりませんでした";list.appendChild(p);return}
+  shops.forEach(function(s){
+    var marker=null;
+    if(window.L&&mapLayer){
+      marker=L.circleMarker([s.lat,s.lng],{radius:7,color:"#fff",weight:2,fillColor:"#d64545",fillOpacity:.95})
+        .bindTooltip(s.name+"（徒歩"+s.walk+"分）").addTo(mapLayer);
+      shopMarkers.push(marker);
+    }
+    var row=document.createElement("div");row.className="shop";
+    var left=document.createElement("div"),name=document.createElement("span"),sub=document.createElement("small");
+    name.textContent=s.name;
+    sub.textContent=[s.kind,s.hours].filter(Boolean).join("・");
+    left.appendChild(name);
+    if(avail!==null){
+      var ok=s.walk*2<=avail,badge=document.createElement("span");
+      badge.className="badge"+(ok?"":" no");
+      badge.textContent=ok?"行ける":"時間不足";
+      left.appendChild(badge);
+    }
+    left.appendChild(sub);
+    var right=document.createElement("b");right.textContent="徒歩"+s.walk+"分";
+    row.appendChild(left);row.appendChild(right);
+    row.addEventListener("click",function(){if(lmap&&marker){lmap.setView([s.lat,s.lng],18);marker.openTooltip()}});
+    list.appendChild(row);
+  });
+}
+
+// 5. 現在地 → バス停の徒歩時間を「今いる場所からバス停まで」に入れる
+$("locBtn").addEventListener("click",function(){
+  if(!("geolocation" in navigator)){mapStatus("このブラウザでは位置情報を使えません");return}
+  mapStatus("現在地を取得しています…");
+  navigator.geolocation.getCurrentPosition(async function(pos){
+    herePos=[pos.coords.latitude,pos.coords.longitude];
+    var stop=STOPS[curStop],w=await walkTimes(herePos,[[stop.lat,stop.lng]]),m=w.min[0];
+    $("toStop").value=Math.min(120,m);render();
+    drawMap();var saved=shopCache(curStop);if(saved)drawShops(saved.shops);
+    mapStatus("現在地から"+stop.name+"まで 徒歩"+m+"分。設定の「今いる場所からバス停まで」に入れました"+(w.routed?"":"（直線距離からの概算）"));
+  },function(err){
+    mapStatus(err.code===1?"位置情報が許可されていません。ブラウザの設定で許可してください":"現在地を取得できませんでした（"+(window.isSecureContext?"電波や設定を確認してください":"https のページでのみ使えます")+"）");
+  },{enableHighAccuracy:true,timeout:10000,maximumAge:60000});
+});
+
+document.querySelectorAll(".stopchips button").forEach(function(b){
+  b.addEventListener("click",function(){curStop=b.dataset.stop;loadShops(false)});
+});
+$("refreshShops").addEventListener("click",function(){loadShops(true)});
+$("mapBtn").addEventListener("click",function(){
+  var d=$("mapSheet");if(d.showModal)d.showModal();else d.setAttribute("open","");
+  loadShops(false);
+});
+$("mapClose").addEventListener("click",function(){var d=$("mapSheet");if(d.close)d.close();else d.removeAttribute("open")});
+
 
 </script>
 </body>
