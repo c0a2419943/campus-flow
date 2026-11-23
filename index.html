@@ -56,8 +56,8 @@ dialog button.on{background:#0f4a5c;color:#fff}
 .hint{font-size:12px;color:#566a82;margin:6px 0 0}
 :focus-visible{outline:3px solid #fff;outline-offset:3px}dialog :focus-visible{outline-color:#2f5f93}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
-.top-actions{display:flex;align-items:center;gap:10px}
-.timetable-open{min-height:44px;padding:0 14px;border:1px solid #ffffff52;border-radius:24px;background:#ffffff1f;color:#fff;font:700 14px var(--sans);cursor:pointer}
+.top-actions{display:flex;align-items:center;gap:6px}
+.timetable-open{min-height:42px;padding:0 11px;border:1px solid #ffffff52;border-radius:24px;background:#ffffff1f;color:#fff;font:700 13px var(--sans);cursor:pointer;white-space:nowrap}
 .schedule-summary{margin:12px 0 0;text-align:center;font-size:13px;line-height:1.6;color:#fffe;overflow-wrap:anywhere}
 #timetable{width:min(100%,760px)}
 .timetable-scroll{overflow-x:auto;margin-top:14px}
@@ -75,6 +75,17 @@ dialog button.on{background:#0f4a5c;color:#fff}
 .timetable-actions button.main{width:auto;margin:0}
 .schedule-toggle{display:flex;align-items:center;gap:8px}
 .schedule-toggle input{width:20px;min-height:20px;margin:0;flex:none}
+/* バス時刻表画面用 */
+.bus-tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:12px}
+.bus-tabs button{min-height:38px;padding:0 4px;font-size:12px;border-radius:10px}
+.bus-list-wrap{max-height:50dvh;overflow-y:auto;margin-top:12px;border:1px solid #d8e1eb;border-radius:14px}
+.bus-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.bus-table th,.bus-table td{padding:10px 12px;border-bottom:1px solid #e6edf5;text-align:center;font-size:15px}
+.bus-table th{position:sticky;top:0;background:#edf3f8;font-size:12px;color:#566a82;z-index:1}
+.bus-table tr.is-past{color:#94a3b8;background:#f8fafc}
+.bus-table tr.is-best{background:#fff8db;font-weight:800;color:#0f4a5c}
+.bus-badge{display:inline-block;margin-left:6px;padding:2px 7px;border-radius:99px;background:#0f4a5c;color:#ffd23f;font-size:11px;font-weight:700;vertical-align:middle}
+.bus-gap-row td{background:#f1f5f9;color:#566a82;font-size:12px;padding:7px 10px}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -84,6 +95,7 @@ dialog button.on{background:#0f4a5c;color:#fff}
   <div class="top">
     <div class="brand">🚌 Campus Flow<small id="dayTag">八王子キャンパス</small></div>
     <div class="top-actions">
+      <button type="button" class="timetable-open" id="openBusTimetable">時刻表</button>
       <button type="button" class="timetable-open" id="openTimetable">時間割</button>
       <button class="gear" id="gear" aria-label="設定を開く">⚙</button>
     </div>
@@ -106,6 +118,27 @@ dialog button.on{background:#0f4a5c;color:#fff}
   <div class="bar" id="bar" aria-hidden="true"></div>
   <div class="cap" aria-hidden="true"><span>外出</span><span>帰り道</span><span>余裕</span></div>
 </main>
+
+<dialog id="busTimetable" aria-labelledby="busTimetableTitle">
+  <h2 id="busTimetableTitle">🚌 バス時刻表</h2>
+  <p class="hint" id="busTimetableSub">駅発 → 八王子キャンパス着</p>
+  <div class="bus-tabs" role="tablist" aria-label="運行ダイヤ切り替え">
+    <button type="button" data-bustype="weekday">平日</button>
+    <button type="button" data-bustype="saturday">土曜</button>
+    <button type="button" data-bustype="holiday">祝日授業</button>
+    <button type="button" data-bustype="nov21">11/21特別</button>
+  </div>
+  <div class="bus-list-wrap" id="busListWrap">
+    <table class="bus-table">
+      <thead>
+        <tr><th>駅発</th><th>大学着</th><th>状況・目安</th></tr>
+      </thead>
+      <tbody id="busTableBody"></tbody>
+    </table>
+  </div>
+  <p class="hint">※2026年11月分の時刻表です。道路事情により遅れることがあります。</p>
+  <button type="button" class="main" id="closeBusTimetable">ホームに戻る</button>
+</dialog>
 
 <dialog id="timetable" aria-labelledby="timetableTitle">
   <form id="timetableForm">
@@ -488,6 +521,96 @@ $("enableNotifications").addEventListener("click",function(){
 });
 $("notifyBefore").addEventListener("change",function(){lastReminderKey="";});
 setInterval(checkDepartureReminder,1000);
+
+// バス時刻表画面の表示制御
+function renderBusTimetable(type) {
+  var r = compute();
+  var targetType = TT[type] ? type : "weekday";
+  var isTodayType = (r.dt.type === targetType);
+  var toStop = num("toStop");
+  var body = $("busTableBody");
+  body.innerHTML = "";
+
+  document.querySelectorAll(".bus-tabs [data-bustype]").forEach(function(btn) {
+    btn.classList.toggle("on", btn.dataset.bustype === targetType);
+  });
+
+  var subText = "駅発 → 八王子キャンパス着";
+  if (r.dt.off && type === "off") {
+    subText += "（※選択日は運休日です。参考として平日ダイヤを表示中）";
+  } else if (isTodayType && r.dt.label) {
+    subText += "（選択日のダイヤ：" + r.dt.label + "）";
+  }
+  $("busTimetableSub").textContent = subText;
+
+  var list = TT[targetType] || [];
+  var focusRow = null;
+
+  list.forEach(function(b) {
+    var dep = b[0], arr = b[1];
+    var depMin = toMin(dep);
+    var tr = document.createElement("tr");
+    var isBest = isTodayType && r.bus && r.bus[0] === dep && r.bus[1] === arr;
+    var isPast = isTodayType && depMin < r.now;
+
+    if (isBest) {
+      tr.className = "is-best";
+      focusRow = tr;
+    } else if (isPast) {
+      tr.className = "is-past";
+      if (!focusRow) focusRow = tr;
+    }
+
+    var note = "";
+    if (isBest) {
+      note = '<span class="bus-badge">おすすめ</span>';
+    } else if (isPast) {
+      note = "発車済み";
+    } else if (toStop !== null) {
+      note = "出発 " + fmt(Math.max(0, depMin - toStop));
+    }
+
+    tr.innerHTML = "<td>" + dep + "</td><td>" + arr + "</td><td>" + note + "</td>";
+    body.appendChild(tr);
+
+    if (targetType === "weekday") {
+      var gap = GAPS.find(function(g) { return g[0] === dep; });
+      if (gap) {
+        var gapTr = document.createElement("tr");
+        gapTr.className = "bus-gap-row";
+        gapTr.innerHTML = '<td colspan="3">↕ ' + gap[0] + "〜" + gap[1] + " は時刻のないシャトル便あり</td>";
+        body.appendChild(gapTr);
+      }
+    }
+  });
+
+  if (focusRow) {
+    requestAnimationFrame(function() {
+      focusRow.scrollIntoView({ block: "center" });
+    });
+  }
+}
+
+$("openBusTimetable").addEventListener("click", function() {
+  var r = compute();
+  var initType = TT[r.dt.type] ? r.dt.type : (r.dt.type === "off" ? "off" : "weekday");
+  renderBusTimetable(initType);
+  var d = $("busTimetable");
+  if (d.showModal) d.showModal();
+  else d.setAttribute("open", "");
+});
+
+document.querySelectorAll(".bus-tabs [data-bustype]").forEach(function(btn) {
+  btn.addEventListener("click", function() {
+    renderBusTimetable(btn.dataset.bustype);
+  });
+});
+
+$("closeBusTimetable").addEventListener("click", function() {
+  var d = $("busTimetable");
+  if (d.close) d.close();
+  else d.removeAttribute("open");
+});
 
 </script>
 </body>
